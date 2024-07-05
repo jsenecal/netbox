@@ -7,7 +7,7 @@ from django.urls import NoReverseMatch, reverse
 
 from core.models import ObjectType
 from utilities.forms import get_selected_values, TableConfigForm
-from utilities.views import get_viewname
+from utilities.views import get_viewname, get_validated_viewname
 
 __all__ = (
     'applied_filters',
@@ -51,14 +51,7 @@ def validated_viewname(model, action):
     """
     Return the view name for the given model and action if valid, or None if invalid.
     """
-    viewname = get_viewname(model, action)
-
-    # Validate the view name
-    try:
-        reverse(viewname)
-        return viewname
-    except NoReverseMatch:
-        return None
+    return get_validated_viewname(model, action)
 
 
 @register.filter()
