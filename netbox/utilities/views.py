@@ -160,11 +160,12 @@ class GetRelatedModelsMixin:
             request: Current request being processed.
             instance: The instance related models should be looked up for. A list of instances can be passed to match
                 related objects in this list (e.g. to find sites of a region including child regions).
-            omit: Remove relationships to these models from the result. Needs to be passed, if related models don't
-                provide a `_list` view.
+            omit: Explicitly remove relationships to these models from the result. Needs to be passed, if related models don't
+                provide a `_list` view, has slight performance improvements over resolving.
             extra: Add extra models to the list of automatically determined related models. Can be used to add indirect
                 relationships.
         """
+
         model = self.queryset.model
         related = filter(
             lambda m: m[0] is not model and m[0] not in omit,
@@ -180,7 +181,7 @@ class GetRelatedModelsMixin:
                 )),
                 f'{field}_id'
             )
-            for model, field in related
+            for model, field in related if get_validated_viewname(model, 'list') is not None
         ]
         related_models.extend(extra)
 
@@ -258,6 +259,20 @@ def get_viewname(model, action=None, rest_api=False):
             viewname = f'{viewname}_{action}'
 
     return viewname
+
+
+def get_validated_viewname(model, action):
+    """
+    Return the view name for the given model and action if valid, or None if invalid.
+    """
+    viewname = get_viewname(model, action)
+
+    # Validate the view name
+    try:
+        reverse(viewname)
+        return viewname
+    except NoReverseMatch:
+        return None
 
 
 def register_model_view(model, name='', path=None, kwargs=None):
