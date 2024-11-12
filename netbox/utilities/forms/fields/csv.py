@@ -59,6 +59,7 @@ class CSVModelChoiceField(forms.ModelChoiceField):
 
     def __init__(self, conditional=False, *args, **kwargs):
         # Used to display tags for fields that are conditionally required
+        # Used to trigger conditional validation in the forms
         self.conditional = conditional
         super().__init__(*args, **kwargs)
 
