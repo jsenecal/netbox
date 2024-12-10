@@ -661,15 +661,13 @@ class BulkEditView(GetReturnURLMixin, BaseMultiObjectView):
         elif 'virtual_machine' in request.GET:
             initial_data['virtual_machine'] = request.GET.get('virtual_machine')
 
-        if '_apply' in request.POST:
-            form = self.form(request.POST, initial=initial_data)
-            restrict_form_fields(form, request.user)
+        form = self.form(request.POST, initial=initial_data)
+        restrict_form_fields(form, request.user)
 
+        if '_apply' in request.POST:
             if form.is_valid():
                 logger.debug("Form validation was successful")
-
                 try:
-
                     with transaction.atomic():
                         updated_objects = self._update_objects(form, request)
 
