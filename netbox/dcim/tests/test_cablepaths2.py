@@ -1316,6 +1316,93 @@ class CablePathTestCase(CablePathTestCase):
         self.assertEqual(interface4.cable_connector, 2)
         self.assertEqual(interface4.cable_positions, [1])
 
+    def test_111_breakout_1c2p_2c1p_via_pass_through(self):
+        """
+        Regression test for issue #22187.
+
+        A 1C2P:2C1P breakout cable feeds two separate single-position FrontPorts on
+        a patch panel; each is internally mapped to its own RearPort, and each
+        RearPort is connected to a downstream interface via an unprofiled cable.
+
+        [SW1-INT1] --C1(1C2P:2C1P)-- [FP1][RP1] --C2-- [DEV1-INT1]
+                                     [FP2][RP2] --C3-- [DEV1-INT2]
+
+        Creating C2 (or C3) after C1 should not raise "Could not map connector N
+        position None on side B" during path retracing; both endpoints should
+        resolve to complete paths back to SW1-INT1.
+        """
+        sw1_int1 = Interface.objects.create(device=self.device, name='SW1-INT1')
+        dev1_int1 = Interface.objects.create(device=self.device, name='DEV1-INT1')
+        dev1_int2 = Interface.objects.create(device=self.device, name='DEV1-INT2')
+
+        front_ports = [
+            FrontPort.objects.create(device=self.device, name='PP1-FP1'),
+            FrontPort.objects.create(device=self.device, name='PP1-FP2'),
+        ]
+        rear_ports = [
+            RearPort.objects.create(device=self.device, name='PP1-RP1', positions=1),
+            RearPort.objects.create(device=self.device, name='PP1-RP2', positions=1),
+        ]
+        PortMapping.objects.bulk_create([
+            PortMapping(
+                device=self.device,
+                front_port=front_ports[0],
+                front_port_position=1,
+                rear_port=rear_ports[0],
+                rear_port_position=1,
+            ),
+            PortMapping(
+                device=self.device,
+                front_port=front_ports[1],
+                front_port_position=1,
+                rear_port=rear_ports[1],
+                rear_port_position=1,
+            ),
+        ])
+
+        # C1: SW1-INT1 -> FP1, FP2 via a 1C2P:2C1P breakout
+        cable1 = Cable(
+            profile=CableProfileChoices.BREAKOUT_1C2P_2C1P,
+            a_terminations=[sw1_int1],
+            b_terminations=front_ports,
+        )
+        cable1.clean()
+        cable1.save()
+
+        # C2: RP1 -> DEV1-INT1 (unprofiled). This currently raises
+        # ValueError("Could not map connector 1 position None on side B")
+        # during path retracing.
+        cable2 = Cable(a_terminations=[rear_ports[0]], b_terminations=[dev1_int1])
+        cable2.clean()
+        cable2.save()
+
+        # C3: RP2 -> DEV1-INT2 (unprofiled)
+        cable3 = Cable(a_terminations=[rear_ports[1]], b_terminations=[dev1_int2])
+        cable3.clean()
+        cable3.save()
+
+        # Forward paths from each downstream interface should resolve all the
+        # way back to the upstream interface via the breakout cable.
+        path_dev1 = self.assertPathExists(
+            (dev1_int1, cable2, rear_ports[0], front_ports[0], cable1, sw1_int1),
+            is_complete=True,
+            is_active=True,
+        )
+        path_dev2 = self.assertPathExists(
+            (dev1_int2, cable3, rear_ports[1], front_ports[1], cable1, sw1_int1),
+            is_complete=True,
+            is_active=True,
+        )
+
+        for iface in (sw1_int1, dev1_int1, dev1_int2):
+            iface.refresh_from_db()
+        self.assertPathIsSet(dev1_int1, path_dev1)
+        self.assertPathIsSet(dev1_int2, path_dev2)
+
+        # Verify the cable termination metadata recorded on each end.
+        self.assertEqual(sw1_int1.cable_connector, 1)
+        self.assertEqual(sw1_int1.cable_positions, [1, 2])
+
     def test_202_single_path_via_pass_through_with_breakouts(self):
         """
         [IF1] --C1-- [FP1] [RP1] --C2-- [IF3]
